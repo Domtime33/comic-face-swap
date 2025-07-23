@@ -1,57 +1,120 @@
-# app.py
 import streamlit as st
-import cv2
-import numpy as np
+import requests
 from PIL import Image
 import io
 
-st.set_page_config(layout="centered", page_title="Comic Face Swap", page_icon="🦸")
+# -----------------------
+# PAGE CONFIG & STYLES
+# -----------------------
+st.set_page_config(
+    page_title="Comic Face-Swap",
+    page_icon="🦸",
+    layout="centered",
+)
 
-st.title("🦸 Comic Face Swap Generator")
-st.markdown("Upload a comic cover and your selfie. We'll blend your face into the comic!")
+st.markdown(
+    """
+    <style>
+        .main {
+            background-color: #1c1c1e;
+            color: white;
+        }
+        .block-container {
+            padding-top: 2rem;
+        }
+        .css-18e3th9 {
+            padding: 2rem 1rem;
+        }
+        h1, h2, h3 {
+            color: #00FFD1;
+        }
+        .stButton>button {
+            background-color: #00FFD1;
+            color: black;
+            font-weight: bold;
+            border-radius: 12px;
+            padding: 0.5rem 1rem;
+        }
+    </style>
+    """,
+    unsafe_allow_html=True,
+)
 
-# Upload Comic Cover
-comic_file = st.file_uploader("📘 Upload Comic Cover", type=["jpg", "jpeg", "png"], key="comic")
-# Upload Face Photo
-face_file = st.file_uploader("📸 Upload Your Selfie", type=["jpg", "jpeg", "png"], key="face")
+# -----------------------
+# TITLE
+# -----------------------
+st.title("🦸 Comic Face-Swap Generator")
 
-def load_image(file):
-    image = Image.open(file).convert("RGB")
-    return np.array(image)
+st.markdown("Upload your face and pick a comic book cover to transform yourself into a comic superhero!")
 
-def detect_face(image_np):
-    gray = cv2.cvtColor(image_np, cv2.COLOR_RGB2GRAY)
-    face_cascade = cv2.CascadeClassifier(cv2.data.haarcascades + "haarcascade_frontalface_default.xml")
-    faces = face_cascade.detectMultiScale(gray, 1.3, 5)
-    return faces
+# -----------------------
+# IMAGE UPLOAD
+# -----------------------
+uploaded_face = st.file_uploader("Upload a selfie", type=["jpg", "jpeg", "png"])
 
-def swap_face(comic_np, face_np):
-    faces = detect_face(comic_np)
-    if len(faces) == 0:
-        return None
+# -----------------------
+# COVER TEMPLATE SELECTION
+# -----------------------
+cover_options = {
+    "Spider-Hero": "https://i.imgur.com/kZ9bZpO.jpg",
+    "Superwoman Classic": "https://i.imgur.com/lQxEJ8A.jpg",
+    "Cosmic Avenger": "https://i.imgur.com/fZ2LVIm.jpg"
+}
 
-    (x, y, w, h) = faces[0]
+selected_cover = st.selectbox("Choose a comic book cover", list(cover_options.keys()))
 
-    face_resized = cv2.resize(face_np, (w, h))
-    comic_copy = comic_np.copy()
-    comic_copy[y:y+h, x:x+w] = face_resized
+# Display the cover preview
+st.image(cover_options[selected_cover], caption=f"{selected_cover} Cover", use_container_width=True)
 
-    return comic_copy
-
-if comic_file and face_file:
-    comic_np = load_image(comic_file)
-    face_np = load_image(face_file)
-
-    st.image(comic_np, caption="Original Comic Cover", use_column_width=True)
-    st.image(face_np, caption="Original Selfie", use_column_width=True)
-
-    result = swap_face(comic_np, face_np)
-
-    if result is not None:
-        st.image(result, caption="🧬 Comic Face Swap Result", use_column_width=True)
-        result_pil = Image.fromarray(result)
-        buffered = io.BytesIO()
-        result_pil.save(buffered, format="PNG")
-        st.download_button("📥 Download Your Comic", buffered.getvalue(), "comic_face_swap.png")
+# -----------------------
+# SUBMIT TO REPLICATE
+# -----------------------
+if st.button("Generate Comic"):
+    if uploaded_face is None:
+        st.error("Please upload a selfie before generating.")
     else:
-        st.error("😕 Couldn't detect a face in the comic cover. Try another image.")
+        st.success("Processing your image...")
+
+        api_token = st.secrets["REPLICATE_API_TOKEN"]
+        replicate_url = "https://api.replicate.com/v1/predictions"
+
+        # Prepare image bytes
+        image_bytes = uploaded_face.read()
+        image_io = io.BytesIO(image_bytes)
+
+        headers = {
+            "Authorization": f"Token {api_token}",
+            "Content-Type": "application/json"
+        }
+
+        json_payload = {
+            "version": "INSERT_YOUR_MODEL_VERSION_HERE",  # Replace with the correct version
+            "input": {
+                "face_image": f"data:image/png;base64,{image_bytes.hex()}",
+                "template_url": cover_options[selected_cover]
+            }
+        }
+
+        response = requests.post(replicate_url, headers=headers, json=json_payload)
+
+        if response.status_code == 201:
+            prediction_url = response.json()["urls"]["get"]
+            with st.spinner("Waiting for model to complete..."):
+                while True:
+                    result = requests.get(prediction_url, headers=headers).json()
+                    status = result["status"]
+                    if status == "succeeded":
+                        image_url = result["output"]
+                        break
+                    elif status == "failed":
+                        st.error("Face-swap failed. Try again.")
+                        break
+            st.image(image_url, caption="Your Comic Cover", use_container_width=True)
+        else:
+            st.error("There was an error connecting to the model.")
+
+# -----------------------
+# FOOTER
+# -----------------------
+st.markdown("---")
+st.caption("Built with ❤️ using Streamlit + Replicate")
