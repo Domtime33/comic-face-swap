@@ -1,63 +1,52 @@
 import streamlit as st
-import requests
 import replicate
+import base64
 import os
 from PIL import Image
 from io import BytesIO
 
-# Set Streamlit page config
-st.set_page_config(page_title="Comic Face Swap", layout="centered")
+# Set your Replicate API token securely
+REPLICATE_API_TOKEN = "r8_2bZyEXAMPLE123456789abcdefg"
+os.environ["REPLICATE_API_TOKEN"] = REPLICATE_API_TOKEN
 
-# --- Load Replicate API Token ---
-try:
-    api_token = st.secrets["REPLICATE_API_TOKEN"]
-    os.environ["REPLICATE_API_TOKEN"] = api_token
-except KeyError:
-    st.error("REPLICATE_API_TOKEN not found in secrets. Please set it in Streamlit secrets.")
-    st.stop()
+st.set_page_config(page_title="Comic Face Swap Generator", page_icon="🦸", layout="centered")
 
-# --- Title ---
-st.title("🦸‍♂️ Comic Face Swap Generator")
+st.title("🦸 Comic Face Swap Generator")
+st.markdown("Upload a selfie, choose a comic book cover, and generate your comic-style transformation!")
 
-# --- Upload photo ---
+# Upload user image
 uploaded_file = st.file_uploader("Upload a selfie or photo", type=["jpg", "jpeg", "png"])
 
-# --- Comic cover selection ---
-comic_options = {
-    "Superwoman Classic": "https://i.imgur.com/LuWjwHZ.png",
-    "Space Hero": "https://i.imgur.com/NyAJJF3.png",
-    "Vigilante City": "https://i.imgur.com/FCXymJ7.png"
+# Select comic cover (dropdown)
+cover_options = {
+    "Vigilante City": "https://i.imgur.com/abc123.jpg",  # Replace with real public URLs
+    "Neon Samurai": "https://i.imgur.com/def456.jpg",
+    "Star Voyage": "https://i.imgur.com/ghi789.jpg"
 }
-selected_cover = st.selectbox("Choose a comic book cover", list(comic_options.keys()))
-cover_url = comic_options[selected_cover]
+selected_cover = st.selectbox("Choose a comic book cover", list(cover_options.keys()))
 
-# Show selected comic cover
-st.image(cover_url, caption=f"{selected_cover} Cover", use_column_width=True)
+# Preview the selected cover
+st.image(cover_options[selected_cover], caption=f"{selected_cover} Cover", use_container_width=True)
 
-# --- Generate comic button ---
-if uploaded_file and st.button("Generate Comic"):
+# Generate button
+if st.button("Generate Comic") and uploaded_file:
     st.subheader("Processing your image...")
 
     try:
-        # Load uploaded image
+        # Convert uploaded image to base64
         image_bytes = uploaded_file.read()
+        image_base64 = base64.b64encode(image_bytes).decode("utf-8")
 
-        # Call Replicate API for comic face generation
-        with st.spinner("Generating comic face..."):
-            output_url = replicate.run(
-                "cjwbw/stable-diffusion-comic:db21e45e13cba57e71abdfd1041514f63c70ac2ae43e0d0d61651758b1ce0ae4",
-                input={"image": image_bytes}
-            )
+        # Call Replicate API with base64 image and selected cover
+        output = replicate.run(
+            "your-username/comic-style-face-swap:latest",  # Replace with your model
+            input={
+                "image": f"data:image/jpeg;base64,{image_base64}",
+                "cover_url": cover_options[selected_cover]
+            }
+        )
 
-        if output_url:
-            # Download output image
-            response = requests.get(output_url)
-            output_img = Image.open(BytesIO(response.content))
-
-            # Display final comic result
-            st.image(output_img, caption="🧠 Your Comic-Style Face", use_column_width=True)
-        else:
-            st.error("No image returned. Please try again.")
+        st.image(output["image"], caption="Your Comic Cover", use_container_width=True)
 
     except Exception as e:
-        st.error(f"⚠️ An error occurred while generating your comic: {e}")
+        st.error(f"An error occurred while generating your comic: {str(e)}")
