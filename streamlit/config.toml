@@ -1,0 +1,9 @@
+[theme]
+base = "light"
+primaryColor = "#f63366"
+font = "sans serif"
+
+[server]
+headless = true
+enableCORS = false
+enableXsrfProtection = false
